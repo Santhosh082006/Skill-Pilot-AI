@@ -21,13 +21,12 @@ import core.intents
 import core.prompts
 import core.media
 
-importlib.reload(core.config)
-importlib.reload(core.llm)
-importlib.reload(core.history)
-importlib.reload(core.gates)
-importlib.reload(core.intents)
-importlib.reload(core.prompts)
-importlib.reload(core.media)
+for _mod in [core.config, core.llm, core.history, core.gates, core.intents, core.prompts, core.media]:
+    try:
+        importlib.reload(_mod)
+    except Exception:
+        pass
+
 
 from core.config import (
     APP_TITLE, APP_SUBTITLE, APP_ICON, AVAILABLE_MODES, CUSTOM_CSS
