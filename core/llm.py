@@ -63,17 +63,60 @@ def stream_groq_completion(messages: List[Dict[str, str]], api_key: str, tempera
     except Exception as e:
         yield f"\n\n❌ **Groq API Error:** {str(e)}"
 
+def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
+    """Stream response from Google Gemini API."""
+    contents = []
+    for msg in messages:
+        role = "user" if msg["role"] == "user" else "model"
+        if msg["role"] == "system":
+            contents.append({"role": "user", "parts": [{"text": f"[System Instruction]: {msg['content']}"}]})
+        else:
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key={api_key}"
+    payload = {
+        "contents": contents,
+        "generationConfig": {"temperature": temperature}
+    }
+    try:
+        response = requests.post(url, json=payload, stream=True, timeout=30)
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8')
+                if line_str.startswith("data: "):
+                    try:
+                        data = json.loads(line_str[6:])
+                        chunk = data["candidates"][0]["content"]["parts"][0]["text"]
+                        if chunk:
+                            yield chunk
+                    except Exception:
+                        pass
+    except Exception as e:
+        yield f"\n\n❌ **Gemini API Error:** {str(e)}"
+
 def stream_chat_completion(
     messages: List[Dict[str, str]],
     model: str = "mistral",
     temperature: float = 0.3
 ) -> Generator[str, None, None]:
     """
-    Yields chunks of text from Ollama or Groq Cloud API stream.
+    Yields chunks of text from Gemini Cloud API, Groq API, or Ollama.
     """
     configure_ollama_client()
 
-    # Check if Groq API Key is available in st.secrets or environment
+    # 1. Check if Gemini API Key is available in st.secrets or environment
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    try:
+        if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
+            gemini_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+
+    if gemini_key:
+        yield from stream_gemini_completion(messages, gemini_key, temperature)
+        return
+
+    # 2. Check if Groq API Key is available in st.secrets or environment
     groq_key = os.environ.get("GROQ_API_KEY")
     try:
         if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
@@ -81,12 +124,11 @@ def stream_chat_completion(
     except Exception:
         pass
 
-    # If Groq Key is configured, use Groq Cloud LLM
     if groq_key:
         yield from stream_groq_completion(messages, groq_key, temperature)
         return
 
-    # Primary: Local / Remote Ollama
+    # 3. Primary: Local / Remote Ollama
     try:
         response = ollama.chat(
             model=model,
@@ -106,11 +148,12 @@ def stream_chat_completion(
         elif "connection refused" in error_msg.lower() or "connect" in error_msg.lower():
             yield (
                 "\n\n❌ **Cannot connect to local Ollama service.**\n\n"
-                "### 🌐 How to enable LLM on your app:\n"
+                "### 🌐 How to enable LLM on your Cloud App:\n"
                 "1. **Local Usage**: Run `ollama serve` and `streamlit run app.py` on your computer.\n"
-                "2. **Streamlit Cloud**: Get a free API Key at [console.groq.com](https://console.groq.com/) and add `GROQ_API_KEY = \"gsk_...\"` in your Streamlit Cloud Secrets!"
+                "2. **Streamlit Cloud (Free Gemini API)**: Get a free API Key at [aistudio.google.com](https://aistudio.google.com/) and add `GEMINI_API_KEY = \"AIzaSy...\"` in your Streamlit Cloud Secrets!"
             )
         else:
             yield f"\n\n❌ **LLM Execution Error:** {error_msg}"
+
 
 
