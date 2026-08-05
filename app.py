@@ -5,8 +5,12 @@ Multimodal (Text + Voice + Image + Files) ChatGPT-Style Navigation Assistant v2.
 
 
 import streamlit as st
-import re
-from streamlit_mic_recorder import speech_to_text
+try:
+    from streamlit_mic_recorder import speech_to_text
+    MIC_RECORDER_AVAILABLE = True
+except ImportError:
+    MIC_RECORDER_AVAILABLE = False
+
 
 import importlib
 import core.config
@@ -161,21 +165,23 @@ else:
             st.markdown("#### 🎙️ Voice Input")
             
             # Browser Speech-to-Text Button
-            st.caption("Option 1: Browser Instant Speech-to-Text")
-            voice_result = speech_to_text(
-                language='en',
-                start_prompt="🎙️ Start Recording Voice",
-                stop_prompt="⏹️ Stop Recording & Transcribe",
-                just_once=True,
-                use_container_width=True,
-                key='inline_mic_stt'
-            )
-            if voice_result:
-                st.session_state.transcribed_voice_text = voice_result
-                st.success(f"🗣️ Transcribed: \"{voice_result}\"")
-                st.rerun()
+            if MIC_RECORDER_AVAILABLE:
+                st.caption("Option 1: Browser Instant Speech-to-Text")
+                voice_result = speech_to_text(
+                    language='en',
+                    start_prompt="🎙️ Start Recording Voice",
+                    stop_prompt="⏹️ Stop Recording & Transcribe",
+                    just_once=True,
+                    use_container_width=True,
+                    key='inline_mic_stt'
+                )
+                if voice_result:
+                    st.session_state.transcribed_voice_text = voice_result
+                    st.success(f"🗣️ Transcribed: \"{voice_result}\"")
+                    st.rerun()
 
-            st.divider()
+                st.divider()
+
 
             # Audio Input Widget Fallback
             st.caption("Option 2: Audio File Recorder")
