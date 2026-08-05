@@ -1,16 +1,22 @@
-"""
-SkillPilot AI - LLM Integration Wrapper
-Handles communication with Ollama and available models.
-"""
-
+import os
+import streamlit as st
 import ollama
 from typing import List, Dict, Generator, Any
 
+def configure_ollama_client():
+    """Configure Ollama client with host from secrets or environment if available."""
+    host = os.environ.get("OLLAMA_HOST")
+    try:
+        if hasattr(st, "secrets") and "OLLAMA_HOST" in st.secrets:
+            os.environ["OLLAMA_HOST"] = st.secrets["OLLAMA_HOST"]
+    except Exception:
+        pass
+
 def get_installed_models() -> List[str]:
-    """Retrieve list of locally installed Ollama models."""
+    """Retrieve list of locally or remotely installed Ollama models."""
+    configure_ollama_client()
     try:
         models_response = ollama.list()
-        # Handle both dict-like and object structures returned by ollama-python
         models_list = models_response.get('models', []) if isinstance(models_response, dict) else getattr(models_response, 'models', [])
         
         extracted = []
@@ -20,7 +26,6 @@ def get_installed_models() -> List[str]:
             else:
                 name = getattr(m, 'name', None) or getattr(m, 'model', None)
             if name:
-                # Remove tag if present, e.g., 'mistral:latest' -> 'mistral'
                 clean_name = name.split(':')[0]
                 if clean_name not in extracted:
                     extracted.append(clean_name)
@@ -37,6 +42,7 @@ def stream_chat_completion(
     """
     Yields chunks of text from Ollama chat stream.
     """
+    configure_ollama_client()
     try:
         response = ollama.chat(
             model=model,
@@ -54,6 +60,7 @@ def stream_chat_completion(
         if "not found" in error_msg.lower():
             yield f"\n\n❌ **Model '{model}' not found in Ollama.**\n👉 Please run in terminal: `ollama pull {model}`"
         elif "connection refused" in error_msg.lower() or "connect" in error_msg.lower():
-            yield "\n\n❌ **Cannot connect to Ollama service.**\n👉 Ensure Ollama is running (`ollama serve`)."
+            yield "\n\n❌ **Cannot connect to Ollama service.**\n👉 For local usage: ensure `ollama serve` is running.\n👉 For Streamlit Cloud: set `OLLAMA_HOST` in Streamlit Secrets."
         else:
             yield f"\n\n❌ **LLM Execution Error:** {error_msg}"
+
