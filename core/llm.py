@@ -1,11 +1,12 @@
 import os
+import json
+import requests
 import streamlit as st
 import ollama
 from typing import List, Dict, Generator, Any
 
 def configure_ollama_client():
     """Configure Ollama client with host from secrets or environment if available."""
-    host = os.environ.get("OLLAMA_HOST")
     try:
         if hasattr(st, "secrets") and "OLLAMA_HOST" in st.secrets:
             os.environ["OLLAMA_HOST"] = st.secrets["OLLAMA_HOST"]
@@ -34,15 +35,58 @@ def get_installed_models() -> List[str]:
     except Exception:
         return ["mistral"]
 
+def stream_groq_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
+    """Stream response from Groq API."""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True
+    }
+    try:
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, stream=True, timeout=30)
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8')
+                if line_str.startswith("data: ") and "[DONE]" not in line_str:
+                    try:
+                        data = json.loads(line_str[6:])
+                        chunk = data["choices"][0]["delta"].get("content", "")
+                        if chunk:
+                            yield chunk
+                    except Exception:
+                        pass
+    except Exception as e:
+        yield f"\n\n❌ **Groq API Error:** {str(e)}"
+
 def stream_chat_completion(
     messages: List[Dict[str, str]],
     model: str = "mistral",
     temperature: float = 0.3
 ) -> Generator[str, None, None]:
     """
-    Yields chunks of text from Ollama chat stream.
+    Yields chunks of text from Ollama or Groq Cloud API stream.
     """
     configure_ollama_client()
+
+    # Check if Groq API Key is available in st.secrets or environment
+    groq_key = os.environ.get("GROQ_API_KEY")
+    try:
+        if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+            groq_key = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        pass
+
+    # If Groq Key is configured, use Groq Cloud LLM
+    if groq_key:
+        yield from stream_groq_completion(messages, groq_key, temperature)
+        return
+
+    # Primary: Local / Remote Ollama
     try:
         response = ollama.chat(
             model=model,
@@ -60,7 +104,13 @@ def stream_chat_completion(
         if "not found" in error_msg.lower():
             yield f"\n\n❌ **Model '{model}' not found in Ollama.**\n👉 Please run in terminal: `ollama pull {model}`"
         elif "connection refused" in error_msg.lower() or "connect" in error_msg.lower():
-            yield "\n\n❌ **Cannot connect to Ollama service.**\n👉 For local usage: ensure `ollama serve` is running.\n👉 For Streamlit Cloud: set `OLLAMA_HOST` in Streamlit Secrets."
+            yield (
+                "\n\n❌ **Cannot connect to local Ollama service.**\n\n"
+                "### 🌐 How to enable LLM on your app:\n"
+                "1. **Local Usage**: Run `ollama serve` and `streamlit run app.py` on your computer.\n"
+                "2. **Streamlit Cloud**: Get a free API Key at [console.groq.com](https://console.groq.com/) and add `GROQ_API_KEY = \"gsk_...\"` in your Streamlit Cloud Secrets!"
+            )
         else:
             yield f"\n\n❌ **LLM Execution Error:** {error_msg}"
+
 
