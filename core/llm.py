@@ -64,44 +64,54 @@ def stream_groq_completion(messages: List[Dict[str, str]], api_key: str, tempera
         yield f"\n\n❌ **Groq API Error:** {str(e)}"
 
 def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
-    """Generate response from Google Gemini API using OpenAI Compatibility."""
-    headers = {
-        "Authorization": f"Bearer {api_key.strip()}",
-        "Content-Type": "application/json"
-    }
-    # gemini-1.5-flash has global free-tier availability without the limit: 0 error
-    payload = {
-        "model": "gemini-1.5-flash",
-        "messages": messages,
-        "temperature": temperature,
-        "stream": True
-    }
+    """Generate response from Google Gemini API (Standard REST for 100% reliability)."""
+    contents = []
+    system_instruction = None
     
-    try:
-        response = requests.post("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", headers=headers, json=payload, stream=True, timeout=30)
+    for msg in messages:
+        if msg["role"] == "system":
+            system_instruction = {"parts": [{"text": msg["content"]}]}
+        else:
+            role = "user" if msg["role"] == "user" else "model"
+            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    if not contents:
+        contents.append({"role": "user", "parts": [{"text": "Hello"}]})
+
+    # Standard proven generateContent REST endpoint
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key.strip()}"
+    payload = {
+        "contents": contents,
+        "generationConfig": {"temperature": temperature}
+    }
+    if system_instruction:
+        payload["system_instruction"] = system_instruction
         
-        if response.status_code != 200:
-            try:
-                err_data = response.json()
-                err_msg = err_data.get("error", {}).get("message", response.text)
-            except Exception:
-                err_msg = response.text
-            yield f"\n\n❌ **Gemini API Error (HTTP {response.status_code}):** {err_msg}"
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                parts = candidates[0]["content"].get("parts", [])
+                text = "".join([p.get("text", "") for p in parts])
+                if text:
+                    # Yield entire response to ensure UI updates instantly
+                    yield text
             return
 
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith("data: ") and "[DONE]" not in line_str:
-                    try:
-                        data = json.loads(line_str[6:])
-                        chunk = data["choices"][0]["delta"].get("content", "")
-                        if chunk:
-                            yield chunk
-                    except Exception:
-                        pass
+        # Handle API Errors clearly
+        try:
+            err_data = response.json()
+            err_msg = err_data.get("error", {}).get("message", response.text)
+        except Exception:
+            err_msg = response.text
+        yield f"\n\n❌ **Gemini API Error (HTTP {response.status_code}):** {err_msg}"
+        
     except Exception as e:
         yield f"\n\n❌ **Gemini Request Error:** {str(e)}"
+
 
 
 
