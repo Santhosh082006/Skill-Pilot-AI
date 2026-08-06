@@ -64,35 +64,50 @@ def stream_groq_completion(messages: List[Dict[str, str]], api_key: str, tempera
         yield f"\n\n❌ **Groq API Error:** {str(e)}"
 
 def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
-    """Stream response from Google Gemini API."""
+    """Generate response from Google Gemini API."""
     contents = []
+    system_instruction = None
+    
     for msg in messages:
-        role = "user" if msg["role"] == "user" else "model"
         if msg["role"] == "system":
-            contents.append({"role": "user", "parts": [{"text": f"[System Instruction]: {msg['content']}"}]})
+            system_instruction = {"parts": [{"text": msg["content"]}]}
         else:
+            role = "user" if msg["role"] == "user" else "model"
             contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key={api_key}"
+    if not contents:
+        contents.append({"role": "user", "parts": [{"text": "Hello"}]})
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key.strip()}"
     payload = {
         "contents": contents,
         "generationConfig": {"temperature": temperature}
     }
+    if system_instruction:
+        payload["system_instruction"] = system_instruction
+
     try:
-        response = requests.post(url, json=payload, stream=True, timeout=30)
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith("data: "):
-                    try:
-                        data = json.loads(line_str[6:])
-                        chunk = data["candidates"][0]["content"]["parts"][0]["text"]
-                        if chunk:
-                            yield chunk
-                    except Exception:
-                        pass
+        res = requests.post(url, json=payload, timeout=30)
+        if res.status_code == 200:
+            data = res.json()
+            candidates = data.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                parts = candidates[0]["content"].get("parts", [])
+                text = "".join([p.get("text", "") for p in parts])
+                if text:
+                    yield text
+                    return
+            yield "Received response from Gemini API."
+        else:
+            try:
+                err_json = res.json()
+                err_msg = err_json.get("error", {}).get("message", str(err_json))
+            except Exception:
+                err_msg = res.text
+            yield f"❌ **Gemini API Error (HTTP {res.status_code}):** {err_msg}"
     except Exception as e:
-        yield f"\n\n❌ **Gemini API Error:** {str(e)}"
+        yield f"❌ **Gemini Request Error:** {str(e)}"
+
 
 def stream_chat_completion(
     messages: List[Dict[str, str]],
