@@ -69,9 +69,9 @@ def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, tempe
         "Authorization": f"Bearer {api_key.strip()}",
         "Content-Type": "application/json"
     }
-    # gemini-2.5-flash or gemini-2.0-flash are latest standards, fallback to 1.5-flash
+    # gemini-1.5-flash has global free-tier availability without the limit: 0 error
     payload = {
-        "model": "gemini-2.0-flash",
+        "model": "gemini-1.5-flash",
         "messages": messages,
         "temperature": temperature,
         "stream": True
