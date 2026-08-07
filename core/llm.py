@@ -184,8 +184,38 @@ def stream_cerebras_completion(messages: List[Dict[str, str]], api_key: str, tem
                             yield chunk
                     except Exception:
                         pass
+def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
+    """Stream response from OpenAI API."""
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True
+    }
+    try:
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            yield f"\n\n❌ **OpenAI API Error (HTTP {response.status_code}):** {response.text}"
+            return
+            
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8')
+                if line_str.startswith("data: ") and "[DONE]" not in line_str:
+                    try:
+                        data = json.loads(line_str[6:])
+                        chunk = data["choices"][0]["delta"].get("content", "")
+                        if chunk:
+                            yield chunk
+                    except Exception:
+                        pass
     except Exception as e:
-        yield f"\n\n❌ **Cerebras API Error:** {str(e)}"
+        yield f"\n\n❌ **OpenAI API Error:** {str(e)}"
 
 def stream_chat_completion(
     messages: List[Dict[str, str]],
@@ -193,9 +223,21 @@ def stream_chat_completion(
     temperature: float = 0.3
 ) -> Generator[str, None, None]:
     """
-    Yields chunks of text from Cerebras, Gemini, Groq, or Ollama.
+    Yields chunks of text from OpenAI, Cerebras, Gemini, Groq, or Ollama.
     """
     configure_ollama_client()
+
+    # 1. Check if OpenAI API Key is available
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    try:
+        if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
+            openai_key = st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        pass
+
+    if openai_key:
+        yield from stream_openai_completion(messages, openai_key, temperature)
+        return
 
     # 1. Check if Cerebras API Key is available
     cerebras_key = os.environ.get("CEREBRAS_API_KEY")
