@@ -78,8 +78,8 @@ def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, tempe
     if not contents:
         contents.append({"role": "user", "parts": [{"text": "Hello"}]})
 
-    # Standard proven generateContent REST endpoint
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key.strip()}"
+    # Standard proven generateContent REST endpoint using v1 stable
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key.strip()}"
     payload = {
         "contents": contents,
         "generationConfig": {"temperature": temperature}
