@@ -198,39 +198,81 @@ def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, tempe
     # Auto-detect OpenRouter free API key
     if api_key_clean.startswith("sk-or-"):
         url = "https://openrouter.ai/api/v1/chat/completions"
-        model_name = "google/gemma-4-31b-it:free" # 100% Free OpenRouter model
         headers["HTTP-Referer"] = "https://skill-pilot.ai"
         headers["X-Title"] = "SkillPilot"
-    else:
-        url = "https://api.openai.com/v1/chat/completions"
-        model_name = "gpt-4o-mini"
         
-    payload = {
-        "model": model_name,
-        "messages": messages,
-        "temperature": temperature,
-        "stream": True
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
-        
-        if response.status_code != 200:
-            yield f"\n\n❌ **API Error (HTTP {response.status_code}):** {response.text}"
-            return
+        free_models = ["google/gemma-4-31b-it:free", "meta-llama/llama-3.3-70b-instruct:free"]
+        try:
+            res = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                fetched_free = [m['id'] for m in data.get('data', []) if m['id'].endswith(':free')]
+                if fetched_free:
+                    free_models = fetched_free
+        except Exception:
+            pass
             
-        for line in response.iter_lines():
-            if line:
-                line_str = line.decode('utf-8')
-                if line_str.startswith("data: ") and "[DONE]" not in line_str:
-                    try:
-                        data = json.loads(line_str[6:])
-                        chunk = data["choices"][0]["delta"].get("content", "")
-                        if chunk:
-                            yield chunk
-                    except Exception:
-                        pass
-    except Exception as e:
-        yield f"\n\n❌ **API Error:** {str(e)}"
+        last_error = "Unknown Error"
+        for model_name in free_models[:10]:
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": True
+            }
+            try:
+                response = requests.post(url, headers=headers, json=payload, stream=True, timeout=10)
+                if response.status_code == 200:
+                    success = False
+                    for line in response.iter_lines():
+                        if line:
+                            line_str = line.decode('utf-8')
+                            if line_str.startswith("data: ") and "[DONE]" not in line_str:
+                                try:
+                                    data = json.loads(line_str[6:])
+                                    chunk = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if chunk:
+                                        yield chunk
+                                        success = True
+                                except Exception:
+                                    pass
+                    if success:
+                        return
+                else:
+                    last_error = f"HTTP {response.status_code}: {response.text}"
+            except Exception as e:
+                last_error = str(e)
+                
+        yield f"\n\n❌ **OpenRouter API Error (All Free Models Overloaded):** {last_error}"
+        return
+        
+    else:
+        # Standard OpenAI Fallback
+        url = "https://api.openai.com/v1/chat/completions"
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
+            if response.status_code != 200:
+                yield f"\n\n❌ **OpenAI API Error (HTTP {response.status_code}):** {response.text}"
+                return
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith("data: ") and "[DONE]" not in line_str:
+                        try:
+                            data = json.loads(line_str[6:])
+                            chunk = data["choices"][0]["delta"].get("content", "")
+                            if chunk:
+                                yield chunk
+                        except Exception:
+                            pass
+        except Exception as e:
+            yield f"\n\n❌ **OpenAI API Error:** {str(e)}"
 
 def stream_chat_completion(
     messages: List[Dict[str, str]],
