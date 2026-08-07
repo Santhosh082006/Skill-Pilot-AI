@@ -136,17 +136,80 @@ def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, tempe
 
 
 
+def stream_cerebras_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
+    """Stream response from Cerebras API."""
+    headers = {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json"
+    }
+    
+    # Try to discover models
+    model_name = "llama3.1-70b"
+    try:
+        models_res = requests.get("https://api.cerebras.ai/v1/models", headers=headers, timeout=5)
+        if models_res.status_code == 200:
+            data = models_res.json()
+            available = [m["id"] for m in data.get("data", [])]
+            if available:
+                if "llama3.1-70b" in available:
+                    model_name = "llama3.1-70b"
+                elif "llama3.1-8b" in available:
+                    model_name = "llama3.1-8b"
+                else:
+                    model_name = available[0]
+    except Exception:
+        pass
+        
+    payload = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True
+    }
+    try:
+        response = requests.post("https://api.cerebras.ai/v1/chat/completions", headers=headers, json=payload, stream=True, timeout=30)
+        
+        if response.status_code != 200:
+            yield f"\n\n❌ **Cerebras API Error (HTTP {response.status_code}):** {response.text}"
+            return
+            
+        for line in response.iter_lines():
+            if line:
+                line_str = line.decode('utf-8')
+                if line_str.startswith("data: ") and "[DONE]" not in line_str:
+                    try:
+                        data = json.loads(line_str[6:])
+                        chunk = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if chunk:
+                            yield chunk
+                    except Exception:
+                        pass
+    except Exception as e:
+        yield f"\n\n❌ **Cerebras API Error:** {str(e)}"
+
 def stream_chat_completion(
     messages: List[Dict[str, str]],
     model: str = "mistral",
     temperature: float = 0.3
 ) -> Generator[str, None, None]:
     """
-    Yields chunks of text from Gemini Cloud API, Groq API, or Ollama.
+    Yields chunks of text from Cerebras, Gemini, Groq, or Ollama.
     """
     configure_ollama_client()
 
-    # 1. Check if Gemini API Key is available in st.secrets or environment
+    # 1. Check if Cerebras API Key is available
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY")
+    try:
+        if hasattr(st, "secrets") and "CEREBRAS_API_KEY" in st.secrets:
+            cerebras_key = st.secrets["CEREBRAS_API_KEY"]
+    except Exception:
+        pass
+
+    if cerebras_key:
+        yield from stream_cerebras_completion(messages, cerebras_key, temperature)
+        return
+
+    # 2. Check if Gemini API Key is available in st.secrets or environment
     gemini_key = os.environ.get("GEMINI_API_KEY")
     try:
         if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
@@ -158,7 +221,7 @@ def stream_chat_completion(
         yield from stream_gemini_completion(messages, gemini_key, temperature)
         return
 
-    # 2. Check if Groq API Key is available in st.secrets or environment
+    # 3. Check if Groq API Key is available in st.secrets or environment
     groq_key = os.environ.get("GROQ_API_KEY")
     try:
         if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
