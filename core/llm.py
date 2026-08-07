@@ -91,8 +91,30 @@ def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, tempe
         if not contents:
             contents.append({"role": "user", "parts": ["Hello"]})
             
+        # Dynamically discover a supported model to bypass 404 errors
+        available_models = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+        except Exception:
+            pass
+            
+        # Select best available model fallback chain
+        model_name = "gemini-1.5-flash" # default
+        if available_models:
+            prefs = ["models/gemini-1.5-flash", "models/gemini-2.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash"]
+            found = False
+            for p in prefs:
+                if p in available_models:
+                    model_name = p
+                    found = True
+                    break
+            if not found:
+                model_name = available_models[0]
+                
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            model_name=model_name,
             system_instruction=system_instruction,
             generation_config={"temperature": temperature}
         )
@@ -102,7 +124,7 @@ def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, tempe
             yield response.text
             
     except Exception as e:
-        yield f"\n\n❌ **Gemini SDK Error:** {str(e)}"
+        yield f"\n\n❌ **Gemini SDK Error:** {str(e)}\n\n💡 **Tip:** Your API key might not have access to standard models yet. Check Google AI Studio!"
 
 
 
