@@ -5,7 +5,11 @@ SkillPilot AI - System Prompt Manager
 def build_system_prompt(mode: str, intent: str = "general", entity: str = "") -> str:
     """Builds a structured system prompt depending on mode and detected intent."""
     
-    base_instruction = "You are SkillPilot AI, a world-class AI Career & Learning Navigator. Be concise, structured, and highly actionable."
+    base_instruction = (
+        "You are SkillPilot AI, a world-class AI Career & Learning Navigator. Be concise, structured, and highly actionable.\n"
+        "CRITICAL DOMAIN KNOWLEDGE:\n"
+        "- If the user mentions 'srmap', 'srm ap', or 'srm', they are strictly referring to 'SRM University AP in Andhra Pradesh'. Answer accordingly without hallucinating other acronyms."
+    )
     
     if mode == "Coding & DSA Coach" or intent == "coding_help":
         return (
