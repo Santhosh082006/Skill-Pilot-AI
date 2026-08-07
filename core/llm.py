@@ -184,6 +184,9 @@ def stream_cerebras_completion(messages: List[Dict[str, str]], api_key: str, tem
                             yield chunk
                     except Exception:
                         pass
+    except Exception as e:
+        yield f"\n\n❌ **Cerebras API Error:** {str(e)}"
+
 def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
     """Stream response from OpenAI API."""
     headers = {
