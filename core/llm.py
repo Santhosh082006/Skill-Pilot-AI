@@ -188,22 +188,34 @@ def stream_cerebras_completion(messages: List[Dict[str, str]], api_key: str, tem
         yield f"\n\n❌ **Cerebras API Error:** {str(e)}"
 
 def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
-    """Stream response from OpenAI API."""
+    """Stream response from OpenAI API or OpenRouter."""
+    api_key_clean = api_key.strip()
     headers = {
-        "Authorization": f"Bearer {api_key.strip()}",
+        "Authorization": f"Bearer {api_key_clean}",
         "Content-Type": "application/json"
     }
+    
+    # Auto-detect OpenRouter free API key
+    if api_key_clean.startswith("sk-or-"):
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        model_name = "meta-llama/llama-3.3-70b-instruct:free" # 100% Free OpenRouter model
+        headers["HTTP-Referer"] = "https://skill-pilot.ai"
+        headers["X-Title"] = "SkillPilot"
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        model_name = "gpt-4o-mini"
+        
     payload = {
-        "model": "gpt-4o-mini",
+        "model": model_name,
         "messages": messages,
         "temperature": temperature,
         "stream": True
     }
     try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, stream=True, timeout=30)
+        response = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
         
         if response.status_code != 200:
-            yield f"\n\n❌ **OpenAI API Error (HTTP {response.status_code}):** {response.text}"
+            yield f"\n\n❌ **API Error (HTTP {response.status_code}):** {response.text}"
             return
             
         for line in response.iter_lines():
@@ -218,7 +230,7 @@ def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, tempe
                     except Exception:
                         pass
     except Exception as e:
-        yield f"\n\n❌ **OpenAI API Error:** {str(e)}"
+        yield f"\n\n❌ **API Error:** {str(e)}"
 
 def stream_chat_completion(
     messages: List[Dict[str, str]],
