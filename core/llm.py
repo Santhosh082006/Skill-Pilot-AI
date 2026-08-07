@@ -212,11 +212,27 @@ def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, tempe
         except Exception:
             pass
             
+        formatted_messages = []
+        for m in messages:
+            if "image" in m and m["image"]:
+                formatted_messages.append({
+                    "role": m["role"],
+                    "content": [
+                        {"type": "text", "text": m["content"]},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{m['image']}"}}
+                    ]
+                })
+            else:
+                formatted_messages.append({
+                    "role": m["role"],
+                    "content": m["content"]
+                })
+                
         last_error = "Unknown Error"
         for model_name in free_models[:10]:
             payload = {
                 "model": model_name,
-                "messages": messages,
+                "messages": formatted_messages,
                 "temperature": temperature,
                 "stream": True
             }
@@ -249,9 +265,26 @@ def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, tempe
     else:
         # Standard OpenAI Fallback
         url = "https://api.openai.com/v1/chat/completions"
+        
+        formatted_messages = []
+        for m in messages:
+            if "image" in m and m["image"]:
+                formatted_messages.append({
+                    "role": m["role"],
+                    "content": [
+                        {"type": "text", "text": m["content"]},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{m['image']}"}}
+                    ]
+                })
+            else:
+                formatted_messages.append({
+                    "role": m["role"],
+                    "content": m["content"]
+                })
+                
         payload = {
             "model": "gpt-4o-mini",
-            "messages": messages,
+            "messages": formatted_messages,
             "temperature": temperature,
             "stream": True
         }

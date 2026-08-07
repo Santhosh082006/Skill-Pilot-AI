@@ -144,6 +144,9 @@ else:
     # Action Toolbar Row (Placed right above search input bar)
     col_plus, col_mic, col_space = st.columns([1.8, 1.8, 6.4])
 
+    if "attached_image_base64" not in st.session_state:
+        st.session_state.attached_image_base64 = None
+
     with col_plus:
         with st.popover("➕ Photos & Files", help="Attach photos, code files & documents", use_container_width=True):
             st.markdown("#### 📎 Attach Photos & Files")
@@ -153,9 +156,17 @@ else:
                 key="inline_file_uploader"
             )
             if uploaded_file is not None:
+                import base64
+                import os
                 file_bytes = uploaded_file.read()
                 f_label, f_text = extract_text_from_document(uploaded_file.name, file_bytes)
                 st.session_state.attached_file_name = uploaded_file.name
+                
+                # Keep original OCR for context, but also save base64 for Multimodal LLMs
+                ext = os.path.splitext(uploaded_file.name)[1].lower()
+                if ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp"]:
+                    st.session_state.attached_image_base64 = base64.b64encode(file_bytes).decode('utf-8')
+                
                 st.session_state.attached_file_context = f"\n\n--- ATTACHED FILE ({uploaded_file.name}) ---\n{f_text}"
                 st.success(f"✅ {f_label} attached!")
 
@@ -216,12 +227,19 @@ else:
             st.warning(gate_message)
 
         # Clear active attachments after sending
+        img_base64_to_send = st.session_state.get("attached_image_base64")
+        
         st.session_state.transcribed_voice_text = ""
         st.session_state.attached_file_context = ""
         st.session_state.attached_file_name = ""
+        st.session_state.attached_image_base64 = None
 
         # Append and display user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        msg_obj = {"role": "user", "content": prompt}
+        if img_base64_to_send:
+            msg_obj["image"] = img_base64_to_send
+        st.session_state.messages.append(msg_obj)
+        
         with st.chat_message("user"):
             st.markdown(prompt)
 
@@ -249,7 +267,10 @@ else:
         
         messages = [{"role": "system", "content": system_prompt}]
         for msg in st.session_state.messages:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            msg_copy = {"role": msg["role"], "content": msg["content"]}
+            if "image" in msg:
+                msg_copy["image"] = msg["image"]
+            messages.append(msg_copy)
 
         with st.chat_message("assistant"):
             with st.spinner("SkillPilot AI is processing..."):
