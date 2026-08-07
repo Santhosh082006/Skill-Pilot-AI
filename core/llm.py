@@ -6,7 +6,7 @@ import ollama
 from typing import List, Dict, Generator, Any
 
 try:
-    import google.generativeai as genai
+    from google import genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -70,58 +70,64 @@ def stream_groq_completion(messages: List[Dict[str, str]], api_key: str, tempera
         yield f"\n\n❌ **Groq API Error:** {str(e)}"
 
 def stream_gemini_completion(messages: List[Dict[str, str]], api_key: str, temperature: float = 0.3) -> Generator[str, None, None]:
-    """Generate response from Google Gemini API using official SDK."""
+    """Generate response from Google Gemini API using new google-genai SDK."""
     if not GEMINI_AVAILABLE:
-        yield "\n\n❌ **Google Generative AI SDK is missing.**\n👉 Please ensure `google-generativeai` is installed."
+        yield "\n\n❌ **Google GenAI SDK is missing.**\n👉 Please ensure `google-genai` is installed."
         return
 
     try:
-        genai.configure(api_key=api_key.strip())
+        client = genai.Client(api_key=api_key.strip())
         
-        system_instruction = None
-        contents = []
-        
+        contents = ""
         for msg in messages:
-            if msg["role"] == "system":
-                system_instruction = msg["content"]
-            else:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append({"role": role, "parts": [msg["content"]]})
+            if msg["role"] != "system":
+                contents += f"{msg['role'].capitalize()}: {msg['content']}\n\n"
                 
-        if not contents:
-            contents.append({"role": "user", "parts": ["Hello"]})
+        if not contents.strip():
+            contents = "Hello"
             
-        # Dynamically discover a supported model to bypass 404 errors
+        # Discover models
         available_models = []
         try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    available_models.append(m.name)
+            for m in client.models.list():
+                available_models.append(m.name)
         except Exception:
             pass
             
-        # Select best available model fallback chain
-        model_name = "gemini-1.5-flash" # default
+        # Try to pick 3.x models first, then 2.x, then 1.5
+        prefs = ["gemini-3.5-flash", "gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
+        model_name = "gemini-2.5-flash"
+        
         if available_models:
-            prefs = ["models/gemini-1.5-flash", "models/gemini-2.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash"]
-            found = False
             for p in prefs:
-                if p in available_models:
-                    model_name = p
-                    found = True
+                if any(p in m for m in available_models):
+                    model_name = next(m for m in available_models if p in m)
                     break
-            if not found:
+            if model_name not in available_models:
                 model_name = available_models[0]
                 
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system_instruction,
-            generation_config={"temperature": temperature}
-        )
-        
-        response = model.generate_content(contents)
-        if response.text:
-            yield response.text
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents
+            )
+            if response.text:
+                yield response.text
+        except Exception as api_err:
+            # If the chosen model fails, try the next available ones
+            success = False
+            for backup_model in available_models[:5]: 
+                if backup_model == model_name: continue
+                try:
+                    res = client.models.generate_content(model=backup_model, contents=contents)
+                    if res.text:
+                        yield res.text
+                        success = True
+                        break
+                except Exception:
+                    continue
+            if not success:
+                raise api_err
             
     except Exception as e:
         yield f"\n\n❌ **Gemini SDK Error:** {str(e)}\n\n💡 **Tip:** Your API key might not have access to standard models yet. Check Google AI Studio!"
