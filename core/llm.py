@@ -198,7 +198,7 @@ def stream_openai_completion(messages: List[Dict[str, str]], api_key: str, tempe
     # Auto-detect OpenRouter free API key
     if api_key_clean.startswith("sk-or-"):
         url = "https://openrouter.ai/api/v1/chat/completions"
-        model_name = "meta-llama/llama-3.3-70b-instruct:free" # 100% Free OpenRouter model
+        model_name = "google/gemma-4-31b-it:free" # 100% Free OpenRouter model
         headers["HTTP-Referer"] = "https://skill-pilot.ai"
         headers["X-Title"] = "SkillPilot"
     else:
