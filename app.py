@@ -126,7 +126,7 @@ else:
 
     # Active Attachments Banner (above input bar if files/voice attached)
     if st.session_state.transcribed_voice_text or st.session_state.attached_file_context:
-        att_col1, att_col2 = st.columns([8.5, 1.5])
+        att_col1, att_col2, att_col3 = st.columns([7.0, 1.5, 1.5])
         with att_col1:
             att_desc = []
             if st.session_state.transcribed_voice_text:
@@ -134,11 +134,19 @@ else:
             if st.session_state.attached_file_name:
                 att_desc.append(f"📎 Attached File: {st.session_state.attached_file_name}")
             st.info(" | ".join(att_desc))
+            
         with att_col2:
-            if st.button("❌ Clear"):
+            if st.button("🚀 Analyze", use_container_width=True):
+                # Trigger a default prompt so it sends instantly
+                st.session_state.trigger_analyze = True
+                st.rerun()
+                
+        with att_col3:
+            if st.button("❌ Clear", use_container_width=True):
                 st.session_state.transcribed_voice_text = ""
                 st.session_state.attached_file_context = ""
                 st.session_state.attached_file_name = ""
+                st.session_state.attached_image_base64 = None
                 st.rerun()
 
     # Action Toolbar Row (Placed right above search input bar)
@@ -214,6 +222,12 @@ else:
 
     # Determine final prompt combining text, voice transcript, and file context
     prompt = text_prompt or st.session_state.transcribed_voice_text
+    
+    # Handle instant analyze button trigger
+    if st.session_state.get("trigger_analyze", False):
+        prompt = prompt or "Please analyze this attached file/image."
+        st.session_state.trigger_analyze = False
+        
     if st.session_state.attached_file_context and prompt:
         prompt = f"{prompt}\n{st.session_state.attached_file_context}"
 
